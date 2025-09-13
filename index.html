@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Restaurante Escolar IE Baldomero Sanín Cano</title>
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode/minified/html5-qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0; padding: 0;
+      background: #f4f6f9; color: #333;
+    }
+    header {
+      background: #00695c; color: #fff;
+      padding: 15px; text-align: center;
+      font-size: 22px; font-weight: bold;
+    }
+    main { padding: 20px; }
+    section {
+      background: #fff; margin-bottom: 20px;
+      padding: 15px; border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    h2 { margin-top: 0; color: #00695c; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background: #e0f2f1; }
+    button {
+      background: #00695c; color: white; border: none;
+      padding: 8px 12px; margin: 5px; border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background: #004d40; }
+    #qr-reader { width: 100%; max-width: 400px; margin: auto; }
+    @media (max-width: 600px) {
+      header { font-size: 18px; }
+      button { width: 100%; margin-top: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header>🍽 Restaurante Escolar IE Baldomero Sanín Cano</header>
+  <main>
+    <!-- Carga de estudiantes -->
+    <section>
+      <h2>Cargar estudiantes (CSV)</h2>
+      <input type="file" id="csvFile" accept=".csv">
+      <button onclick="loadCSV()">Cargar</button>
+    </section>
+
+    <!-- Lista de estudiantes -->
+    <section>
+      <h2>Gestión de estudiantes</h2>
+      <table id="studentsTable">
+        <thead>
+          <tr>
+            <th>Nombre</th><th>Grado</th><th>QR</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- Escáner de QR -->
+    <section>
+      <h2>Escáner de asistencia</h2>
+      <div id="qr-reader"></div>
+      <p><strong>Último escaneo:</strong> <span id="lastScan">Ninguno</span></p>
+    </section>
+
+    <!-- Dashboard -->
+    <section>
+      <h2>Dashboard de asistencia</h2>
+      <p>Total estudiantes: <span id="totalStudents">0</span></p>
+      <p>Asistencias de hoy (<span id="todayDay"></span>): <span id="todayAttendance">0</span></p>
+    </section>
+  </main>
+
+<script>
+  let students = JSON.parse(localStorage.getItem("students")) || [];
+  let attendance = JSON.parse(localStorage.getItem("attendance")) || {};
+  
+  // Día actual (lunes a viernes)
+  const diasSemana = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+  let today = new Date();
+  let dayName = diasSemana[today.getDay()];
+  document.getElementById("todayDay").innerText = dayName;
+
+  // Renderizar tabla
+  function renderTable() {
+    let tbody = document.querySelector("#studentsTable tbody");
+    tbody.innerHTML = "";
+    students.forEach((st, i) => {
+      let tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${st.nombre}</td>
+        <td>${st.grado}</td>
+        <td><canvas id="qr-${i}"></canvas></td>
+        <td><button onclick="deleteStudent(${i})">Eliminar</button></td>
+      `;
+      tbody.appendChild(tr);
+      QRCode.toCanvas(document.getElementById(`qr-${i}`), st.id, { width: 60 });
+    });
+    document.getElementById("totalStudents").innerText = students.length;
+    updateDashboard();
+    localStorage.setItem("students", JSON.stringify(students));
+  }
+
+  // Cargar CSV
+  function loadCSV() {
+    const file = document.getElementById("csvFile").files[0];
+    if (!file) return alert("Selecciona un archivo CSV");
+    const reader = new FileReader();
+    reader.onload = e => {
+      const lines = e.target.result.split("\n").map(l => l.trim()).filter(l => l);
+      lines.forEach(line => {
+        let [nombre, grado] = line.split(",");
+        let id = nombre.trim() + "_" + grado.trim() + "_" + Date.now();
+        students.push({ nombre: nombre.trim(), grado: grado.trim(), id });
+      });
+      renderTable();
+    };
+    reader.readAsText(file);
+  }
+
+  // Eliminar estudiante
+  function deleteStudent(i) {
+    students.splice(i, 1);
+    renderTable();
+  }
+
+  // Registrar asistencia con voz
+  function registerAttendance(studentId) {
+    if (dayName === "Domingo" || dayName === "Sábado") {
+      alert("No se registra asistencia en fin de semana");
+      return;
+    }
+    if (!attendance[dayName]) attendance[dayName] = [];
+    if (!attendance[dayName].includes(studentId)) {
+      attendance[dayName].push(studentId);
+      localStorage.setItem("attendance", JSON.stringify(attendance));
+      updateDashboard();
+
+      // Voz
+      let msg = new SpeechSynthesisUtterance("estudiante registrado");
+      msg.lang = "es-ES";
+      window.speechSynthesis.speak(msg);
+    }
+  }
+
+  // Dashboard
+  function updateDashboard() {
+    let todayCount = attendance[dayName] ? attendance[dayName].length : 0;
+    document.getElementById("todayAttendance").innerText = todayCount;
+  }
+
+  // QR Scanner
+  function onScanSuccess(decodedText) {
+    document.getElementById("lastScan").innerText = decodedText;
+    let student = students.find(st => st.id === decodedText);
+    if (student) {
+      registerAttendance(student.id);
+    }
+  }
+  let html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 250 });
+  html5QrcodeScanner.render(onScanSuccess);
+
+  // Inicializar
+  renderTable();
+</script>
+</body>
+</html>
+
