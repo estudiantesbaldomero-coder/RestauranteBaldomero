@@ -14,37 +14,43 @@
 <style>
   body { padding: 1rem; background:#f8f9fa; }
   header { text-align:center; margin-bottom:1rem; }
-  .scanner-canvas { width:100%; height:auto; border-radius:8px; }
-  #registeredList div { opacity:0; transition:opacity 0.6s ease-in; margin-bottom:4px; }
-  .fade-in { opacity:1 !important; }
-  .flash { animation: flashAnim 0.3s; }
-  @keyframes flashAnim { 0%{background:#d4edda;} 50%{background:#fff;} 100%{background:#d4edda;} }
-  @media print { body * { visibility:hidden; } #print-area, #print-area * { visibility:visible; } #print-area { position:absolute; left:0; top:0; width:100%; } }
+  .qr-card { border:1px dashed #ddd; padding:0.5rem; border-radius:8px; background:#fff;}
+  #registeredTodayList { max-height:200px; overflow:auto; }
+  .flash { animation: flashAnim 0.5s ease-in-out; }
+  @keyframes flashAnim { 0%{background:yellow;} 50%{background:#fff;} 100%{background:yellow;} }
+  @media print {
+    body * { visibility: hidden; }
+    #print-area, #print-area * { visibility: visible; }
+    #print-area { position: absolute; left: 0; top: 0; width:100%; }
+    .label { page-break-inside: avoid; }
+  }
+  .scanner-canvas { width: 100%; height: auto; border-radius:8px; }
 </style>
 </head>
 <body>
 <header>
   <h1>Restaurante Escolar</h1>
   <h3>IE Baldomero Sanín Cano</h3>
-  <p class="text-muted">Carga CSV • Códigos QR • Escáner • Asistencia • Impresión • Responsive</p>
+  <p class="text-muted">Carga CSV • QR • Escáner • Asistencia • Impresión • Responsive</p>
 </header>
 
 <div class="container">
   <div class="row g-3">
 
-    <!-- Controles -->
+    <!-- Left column: Controls -->
     <div class="col-lg-4">
       <div class="card mb-3">
         <div class="card-body">
           <h5>Importar estudiantes (CSV)</h5>
           <input id="csvFile" type="file" accept=".csv,text/csv" class="form-control mb-2" />
-          <small class="text-muted">CSV: encabezados <code>name,grade</code> (name obligatorio)</small>
+          <small class="text-muted">CSV: encabezados <code>name,grade</code></small>
           <button id="importBtn" class="btn btn-primary w-100 mt-2">Cargar CSV</button>
           <hr/>
           <h5>Escáner QR</h5>
-          <button id="startScanner" class="btn btn-outline-primary w-100 mb-1">Iniciar escáner</button>
-          <button id="stopScanner" class="btn btn-outline-secondary w-100 mb-1">Detener escáner</button>
-          <small class="text-muted d-block mb-2">El QR debe contener JSON: <code>{"name":"xxx","grade":"10-3"}</code></small>
+          <div id="scanner-controls" class="mb-2">
+            <button id="startScanner" class="btn btn-outline-primary w-100 mb-1">Iniciar escáner</button>
+            <button id="stopScanner" class="btn btn-outline-secondary w-100 mb-1">Detener escáner</button>
+          </div>
           <div id="scanner-area" style="display:none;">
             <video id="video" autoplay playsinline style="width:100%;border-radius:8px;"></video>
             <canvas id="canvas" style="display:none;"></canvas>
@@ -52,10 +58,14 @@
               <small id="scanStatus" class="text-success"></small>
             </div>
           </div>
+
           <hr/>
-          <h5>Impresión</h5>
-          <button id="printSelected" class="btn btn-outline-dark w-100">Imprimir QRs seleccionados</button>
-          <button id="printAll" class="btn btn-dark w-100 mt-1">Imprimir todos los QRs</button>
+          <h5>Estudiantes registrados hoy</h5>
+          <ul id="registeredTodayList" class="list-group"></ul>
+
+          <hr/>
+          <button id="exportPdfBtn" class="btn btn-primary w-100 mt-2">Exportar PDF</button>
+          <div id="pdfFlashMsg" style="position:fixed; top:20px; right:20px; padding:10px 15px; background:green; color:white; border-radius:5px; display:none; opacity:0; z-index:9999;">PDF generado con éxito</div>
         </div>
       </div>
 
@@ -71,17 +81,8 @@
       </div>
     </div>
 
-    <!-- Lista de estudiantes -->
+    <!-- Right column: Print area -->
     <div class="col-lg-8">
-      <div class="card mb-3">
-        <div class="card-body">
-          <h5>Estudiantes registrados hoy</h5>
-          <div id="registeredList" style="max-height:60vh; overflow:auto;"></div>
-          <button id="exportPDF" class="btn btn-sm btn-success mt-2">Exportar listado a PDF</button>
-        </div>
-      </div>
-
-      <!-- Print area -->
       <div id="print-area" style="display:none; background:#fff; padding:1rem;">
         <div id="labelsContainer" class="d-flex flex-wrap gap-2"></div>
       </div>
@@ -92,106 +93,113 @@
 
 <script>
 /* ===== STORAGE ===== */
-const STORAGE_STUDENTS = 'rs_students_v2';
-const STORAGE_ATT = 'rs_attendance_v2';
-
-function readStudents(){ return JSON.parse(localStorage.getItem(STORAGE_STUDENTS) || '[]'); }
-function writeStudents(arr){ localStorage.setItem(STORAGE_STUDENTS, JSON.stringify(arr)); }
-function readAttendance(){ return JSON.parse(localStorage.getItem(STORAGE_ATT) || '{}'); }
-function writeAttendance(obj){ localStorage.setItem(STORAGE_ATT, JSON.stringify(obj)); }
-
+const STORAGE_STUDENTS='rs_students_v2';
+const STORAGE_ATT='rs_attendance_v2';
+function readStudents(){ return JSON.parse(localStorage.getItem(STORAGE_STUDENTS)||'[]'); }
+function writeStudents(arr){ localStorage.setItem(STORAGE_STUDENTS,JSON.stringify(arr)); }
+function readAttendance(){ return JSON.parse(localStorage.getItem(STORAGE_ATT)||'{}'); }
+function writeAttendance(obj){ localStorage.setItem(STORAGE_ATT,JSON.stringify(obj)); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function todayKey(){ return new Date().toISOString().slice(0,10); }
-function fullDate(){ const d=new Date(); return d.toLocaleDateString('es-ES',{weekday:'long', day:'numeric', month:'long'}); }
 
-/* UI refs */
-const scanStatus = document.getElementById('scanStatus');
-const registeredList = document.getElementById('registeredList');
-const totalStudentsEl = document.getElementById('totalStudents');
-const attTodayEl = document.getElementById('attToday');
-const attTotalEl = document.getElementById('attTotal');
-document.getElementById('todayDate').textContent = fullDate();
+const totalStudentsEl=document.getElementById('totalStudents');
+const attTodayEl=document.getElementById('attToday');
+const attTotalEl=document.getElementById('attTotal');
+document.getElementById('todayDate').textContent=todayKey();
 
-/* CSV import */
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+/* CSV Import */
 document.getElementById('importBtn').addEventListener('click', ()=>{
   const f=document.getElementById('csvFile').files[0];
   if(!f){ alert('Seleccione CSV'); return; }
-  Papa.parse(f,{header:true,skipEmptyLines:true,complete(results){
-    const rows=results.data;
-    const arr=readStudents();
-    let added=0;
-    for(const r of rows){
-      const name=(r.name||r.Nombre||'').trim();
-      const grade=(r.grade||r.Grade||'').trim();
-      if(!name) continue;
-      arr.push({id:uid(),name,grade,createdAt:new Date().toISOString()});
-      added++;
-    }
-    writeStudents(arr);
-    alert(`${added} estudiantes añadidos.`);
-  }});
+  Papa.parse(f,{
+    header:true, skipEmptyLines:true,
+    complete(results){
+      const rows=results.data;
+      const arr=readStudents();
+      let added=0;
+      for(const r of rows){
+        const name=(r.name||'').trim();
+        const grade=(r.grade||'').trim();
+        if(!name) continue;
+        arr.push({id:uid(),name,grade,createdAt:new Date().toISOString()});
+        added++;
+      }
+      writeStudents(arr);
+      alert(`Importados: ${added} estudiantes`);
+      renderDashboard();
+    },
+    error(err){ alert('Error CSV: '+err.message); }
+  });
 });
 
-/* Attendance */
-function registerAttendance(name, grade){
-  const students = readStudents();
-  const matched = students.find(s=>s.name===name && s.grade===grade);
-  if(!matched) { scanStatus.textContent='Estudiante no encontrado'; return; }
-
-  const attendance = readAttendance();
-  const key = todayKey();
-  if(!attendance[key]) attendance[key]={};
-  if(attendance[key][matched.id]){
-    speak(`${matched.name} ya registrado`);
-    scanStatus.textContent='Ya registrado';
-    playFlash(matched.id,'red');
-    return;
-  }
-
-  attendance[key][matched.id] = new Date().toISOString();
-  writeAttendance(attendance);
-  scanStatus.textContent=`Registrado: ${matched.name}`;
-  speak(`Estudiante registrado: ${matched.name}`);
-  addRegisteredToday(matched);
-  playFlash(matched.id,'green');
-  renderDashboard();
-}
-
-/* Dashboard */
+/* Render dashboard */
 function renderDashboard(){
   const students=readStudents();
   const attendance=readAttendance();
   totalStudentsEl.textContent=students.length;
   const today=todayKey();
-  const attToday = attendance[today]?Object.keys(attendance[today]).length:0;
-  const attTotal=Object.values(attendance).reduce((s,o)=>s+Object.keys(o).length,0);
-  attTodayEl.textContent=attToday;
-  attTotalEl.textContent=attTotal;
+  attTodayEl.textContent=attendance[today]? Object.keys(attendance[today]).length : 0;
+  attTotalEl.textContent=Object.values(attendance).reduce((s,obj)=>s+Object.keys(obj).length,0);
+}
+renderDashboard();
+
+/* Attendance registration + audio + flash + listado dinámico */
+function registerAttendanceQR(name,grade){
+  const students=readStudents();
+  const attendance=readAttendance();
+  const today=todayKey();
+
+  const student=students.find(s=>s.name===name && s.grade===grade);
+  if(!student){ alert('Estudiante no encontrado'); return; }
+
+  if(!attendance[today]) attendance[today]={};
+  if(attendance[today][student.id]){
+    playAudio(`El estudiante ${name} ya registrado`);
+    flashEffect(student.id);
+    return;
+  }
+  attendance[today][student.id]=new Date().toISOString();
+  writeAttendance(attendance);
+  renderDashboard();
+  addRegisteredList(student.name);
+  playAudio(`Estudiante ${name} registrado`);
+  flashEffect(student.id);
 }
 
-/* Registered today list */
-function addRegisteredToday(student){
-  const div=document.createElement('div');
-  div.id='reg-'+student.id;
-  div.textContent=`${student.name} - ${student.grade}`;
-  registeredList.appendChild(div);
-  setTimeout(()=>div.classList.add('fade-in'),50);
+/* Audio */
+function playAudio(text){
+  const msg=new SpeechSynthesisUtterance(text);
+  msg.lang='es-ES';
+  window.speechSynthesis.speak(msg);
 }
 
-/* Speech */
-function speak(text){ if('speechSynthesis' in window){ const msg=new SpeechSynthesisUtterance(text); window.speechSynthesis.speak(msg); }}
-
-/* Flash effect */
-function playFlash(id,color){
-  const div=document.getElementById('reg-'+id);
-  if(div){ div.classList.add('flash'); setTimeout(()=>div.classList.remove('flash'),300); }
+/* Flash efecto */
+function flashEffect(id){
+  // simple flash en lista registrada
+  const li=document.createElement('li');
+  li.textContent=''; // no visible
+  li.className='flash';
+  setTimeout(()=>li.remove(),500);
 }
 
-/* Scanner */
-let videoStream=null, scanning=false;
+/* Listado dinámico */
+function addRegisteredList(name){
+  const ul=document.getElementById('registeredTodayList');
+  const li=document.createElement('li');
+  li.className='list-group-item flash';
+  li.textContent=name;
+  ul.appendChild(li);
+}
+
+/* QR Scanner */
+let videoStream=null;
+let scanning=false;
 const video=document.getElementById('video');
 const canvas=document.getElementById('canvas');
 const ctx=canvas.getContext('2d');
+const scanStatus=document.getElementById('scanStatus');
 let lastScanTime=0;
 const SCAN_COOLDOWN_MS=1500;
 
@@ -209,6 +217,7 @@ async function startScanner(){
     scanning=true; scanLoop();
   }catch(err){ alert('No se pudo acceder a la cámara: '+err.message); }
 }
+
 function stopScanner(){
   scanning=false;
   if(videoStream){ videoStream.getTracks().forEach(t=>t.stop()); videoStream=null; }
@@ -222,84 +231,62 @@ function scanLoop(){
     canvas.width=video.videoWidth;
     canvas.height=video.videoHeight;
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
-    try{
-      const imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
-      const code=jsQR(imgData.data,imgData.width,imgData.height,{inversionAttempts:'attemptBoth'});
-      if(code){
-        const now=Date.now();
-        if(now-lastScanTime>SCAN_COOLDOWN_MS){
-          lastScanTime=now;
-          let parsed=null;
-          try{ parsed=JSON.parse(code.data); }catch(e){ parsed=null; }
-          if(parsed && parsed.name && parsed.grade){ registerAttendance(parsed.name,parsed.grade); }
-          else{ scanStatus.textContent='QR inválido'; speak('QR inválido'); }
-        }
+    const imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const code=jsQR(imgData.data,imgData.width,imgData.height,{inversionAttempts:"attemptBoth"});
+    if(code){
+      const now=Date.now();
+      if(now-lastScanTime>SCAN_COOLDOWN_MS){
+        lastScanTime=now;
+        let parsed=null;
+        try{ parsed=JSON.parse(code.data); }catch(e){ parsed=null; }
+        if(parsed && parsed.name && parsed.grade){
+          registerAttendanceQR(parsed.name,parsed.grade);
+          scanStatus.textContent=`Registrando: ${parsed.name}`;
+        }else{ scanStatus.textContent='QR inválido'; }
       }
-    }catch(e){ console.error('scan error',e); }
+    }else{ scanStatus.textContent='Buscando QR...'; }
   }
   requestAnimationFrame(scanLoop);
 }
 
-/* Clear data */
-document.getElementById('clearData').addEventListener('click', ()=>{
-  if(confirm('Borrar estudiantes y asistencias?')){ localStorage.removeItem(STORAGE_STUDENTS); localStorage.removeItem(STORAGE_ATT); registeredList.innerHTML=''; renderDashboard(); }
+/* Export PDF */
+document.getElementById('exportPdfBtn').addEventListener('click', ()=>{
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF();
+  const today=new Date();
+  const options={weekday:'long', day:'numeric', month:'long'};
+  const todayStr=today.toLocaleDateString('es-ES',options);
+  doc.text(`Estudiantes registrados - ${todayStr}`,10,10);
+  const students=Array.from(document.querySelectorAll('#registeredTodayList .list-group-item'));
+  students.forEach((li,idx)=>{
+    doc.text(`${idx+1}. ${li.textContent}`,10,20+idx*10);
+  });
+  doc.save(`Estudiantes_${todayStr}.pdf`);
+  // Flash y mensaje
+  const btn=document.getElementById('exportPdfBtn');
+  btn.style.backgroundColor='#28a745';
+  setTimeout(()=>{ btn.style.backgroundColor=''; },300);
+  const msg=document.getElementById('pdfFlashMsg');
+  msg.style.display='block';
+  msg.style.opacity=1;
+  setTimeout(()=>{
+    msg.style.opacity=0;
+    setTimeout(()=>{ msg.style.display='none'; },500);
+  },1000);
 });
 
-/* Print QR */
-function collectSelectedIds(){ return readStudents().map(s=>s.id); }
-function buildPrintLabels(ids){
-  const students=readStudents();
-  const chosen=ids.length?students.filter(s=>ids.includes(s.id)):students;
-  const container=document.getElementById('labelsContainer');
-  container.innerHTML='';
-  for(const s of chosen){
-    const label=document.createElement('div');
-    label.style='width:180px;padding:6px;border:1px solid #ddd;display:flex;flex-direction:column;align-items:center;margin:6px;background:#fff;';
-    const holder=document.createElement('div'); label.appendChild(holder);
-    const nameEl=document.createElement('div'); nameEl.style='font-size:12px;margin-top:6px;text-align:center;'; nameEl.textContent=`${s.name} - ${s.grade}`; label.appendChild(nameEl);
-    container.appendChild(label);
-    const tmp=document.createElement('div'); holder.appendChild(tmp);
-    new QRCode(tmp,{text:JSON.stringify({name:s.name,grade:s.grade}),width:140,height:140});
-  }
-  return container;
-}
-document.getElementById('printSelected').addEventListener('click', ()=>{
-  const cont=buildPrintLabels([]);
-  document.getElementById('print-area').style.display='block';
-  setTimeout(()=>{ window.print(); document.getElementById('print-area').style.display='none'; },500);
-});
-document.getElementById('printAll').addEventListener('click', ()=>{
-  buildPrintLabels([]);
-  document.getElementById('print-area').style.display='block';
-  setTimeout(()=>{ window.print(); document.getElementById('print-area').style.display='none'; },500);
-});
-
-/* PDF export */
-document.getElementById('exportPDF').addEventListener('click',()=>{
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  doc.setFontSize(14);
-  doc.text(`Estudiantes registrados el ${fullDate()}`,10,10);
-  const today=readAttendance()[todayKey()]||{};
-  const students=readStudents();
-  let y=20;
-  for(const id of Object.keys(today)){
-    const s=students.find(st=>st.id===id);
-    if(s){ doc.text(`${s.name} - ${s.grade}`,10,y); y+=8; }
-  }
-  doc.save(`Registrados_${todayKey()}.pdf`);
-});
-
-/* Demo students */
+/* Demo students (optional) */
 if(readStudents().length===0){
-  const sample=[
+  writeStudents([
     {id:uid(),name:'Carlos Pérez',grade:'10-1',createdAt:new Date().toISOString()},
     {id:uid(),name:'María Gómez',grade:'9-2',createdAt:new Date().toISOString()}
-  ];
-  writeStudents(sample);
+  ]);
+  renderDashboard();
 }
-renderDashboard();
 
+/* Stop camera if page hidden */
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) stopScanner(); });
 </script>
 </body>
 </html>
+
