@@ -64,7 +64,7 @@ header { text-align:center; margin-bottom:1rem; }
 <header>
   <h1>Restaurante Escolar</h1>
   <h3>IE Baldomero Sanín Cano</h3>
-  <p class="text-muted">Carga CSV • Códigos QR • Escáner • Asistencia • Impresión • PDF • Responsive</p>
+  <p class="text-muted">Carga CSV • Códigos QR • Escáner • Asistencia • Impresión • PDF profesional • Responsive</p>
 </header>
 
 <div class="container">
@@ -300,7 +300,7 @@ document.getElementById('printAll').addEventListener('click',()=>{
   setTimeout(()=>{ window.print(); document.getElementById('print-area').style.display='none'; },500);
 });
 
-// Export PDF
+// Export PDF profesional
 document.getElementById('exportPDF').addEventListener('click',()=>{
   const att=readAttendance();
   const today=todayKey();
@@ -308,17 +308,41 @@ document.getElementById('exportPDF').addEventListener('click',()=>{
   const students=readStudents();
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
+  doc.setFontSize(16);
+  doc.setTextColor(40,40,40);
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.5);
+
+  // Encabezado profesional
+  doc.setFillColor(200, 220, 255);
+  doc.rect(10,10,190,12,'F');
+  doc.text(`Estudiantes registrados - ${formatDateToday()}`,105,19,{align:'center'});
+
+  // Tabla
+  const startY = 28;
+  const rowHeight = 10;
+  const colX = [14, 24, 120]; // Número, Nombre, Grado
   doc.setFontSize(12);
-  doc.text(`Estudiantes registrados - ${formatDateToday()}`,14,14);
-  let y=22; let index=1;
+  doc.setTextColor(0);
+  doc.text('N°', colX[0], startY);
+  doc.text('Nombre', colX[1], startY);
+  doc.text('Grado', colX[2], startY);
+  let y = startY + rowHeight;
+  let index =1;
+
   Object.keys(att[today]).forEach(id=>{
     const s=students.find(st=>st.id===id);
     if(s){
-      doc.text(`${index}. ${s.name} - ${s.grade}`,14,y);
-      y+=8; index++;
-      if(y>280){ doc.addPage(); y=14; }
+      if(y>280){ doc.addPage(); y=28; doc.text('N°', colX[0], y); doc.text('Nombre', colX[1], y); doc.text('Grado', colX[2], y); y+=rowHeight;}
+      doc.rect(10, y-8, 190, rowHeight); // fila con borde
+      doc.text(`${index}`, colX[0], y);
+      doc.text(`${s.name}`, colX[1], y);
+      doc.text(`${s.grade}`, colX[2], y);
+      y+=rowHeight;
+      index++;
     }
   });
+
   doc.save(`Estudiantes_${today}.pdf`);
 });
 
