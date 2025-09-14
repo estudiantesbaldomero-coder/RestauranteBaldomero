@@ -21,9 +21,6 @@
   .flash { animation: flashAnim 0.5s; }
   @keyframes flashAnim { 0% {background-color:yellow;} 100% {background-color:transparent;} }
   .scanner-canvas { width:100%; border-radius:8px; }
-  #pdfPreview { max-height:400px; overflow:auto; background:#fff; border:1px solid #ccc; padding:10px; margin-top:10px; }
-  #pdfPreview table { width:100%; border-collapse:collapse; }
-  #pdfPreview th, #pdfPreview td { border:1px solid #ccc; padding:4px; text-align:left; }
 </style>
 </head>
 <body>
@@ -57,7 +54,6 @@
           <hr/>
           <button id="printAll" class="btn btn-dark w-100 mt-1">Imprimir todos los QRs</button>
           <button id="exportPDF" class="btn btn-outline-success w-100 mt-1">Exportar estudiantes registrados hoy a PDF</button>
-          <div id="pdfPreview"></div>
         </div>
       </div>
     </div>
@@ -84,8 +80,8 @@
 </div>
 
 <script>
-const STORAGE_STUDENTS = 'rs_students_v4';
-const STORAGE_ATT = 'rs_attendance_v4';
+const STORAGE_STUDENTS = 'rs_students_v5';
+const STORAGE_ATT = 'rs_attendance_v5';
 
 function readStudents(){ return JSON.parse(localStorage.getItem(STORAGE_STUDENTS)||'[]'); }
 function writeStudents(arr){ localStorage.setItem(STORAGE_STUDENTS, JSON.stringify(arr)); }
@@ -102,7 +98,6 @@ const registeredList = document.getElementById('registeredList');
 const totalStudentsEl = document.getElementById('totalStudents');
 const attTodayEl = document.getElementById('attToday');
 const attTotalEl = document.getElementById('attTotal');
-const pdfPreview = document.getElementById('pdfPreview');
 document.getElementById('todayDate').textContent = formatDate(new Date());
 
 renderAll();
@@ -154,33 +149,6 @@ function renderAll(){
       }
     });
   }
-  updatePDFPreview();
-}
-
-function updatePDFPreview(){
-  pdfPreview.innerHTML='';
-  const attendance = readAttendance();
-  const students = readStudents();
-  const today = todayKey();
-  if(!attendance[today]) return;
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  thead.innerHTML='<tr><th>#</th><th>Nombre</th><th>Grado</th><th>Fecha/Hora</th></tr>';
-  table.appendChild(thead);
-  const tbody = document.createElement('tbody');
-  let count=1;
-  Object.keys(attendance[today]).forEach(id=>{
-    const s = students.find(x=>x.id===id);
-    if(s){
-      const tr = document.createElement('tr');
-      const ts = attendance[today][id];
-      tr.innerHTML=`<td>${count}</td><td>${s.name}</td><td>${s.grade}</td><td>${formatDate(ts,{day:'numeric',month:'long',year:'numeric'})} ${formatTime(ts)}</td>`;
-      tbody.appendChild(tr);
-      count++;
-    }
-  });
-  table.appendChild(tbody);
-  pdfPreview.appendChild(table);
 }
 
 /* Clear data */
