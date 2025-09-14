@@ -12,32 +12,30 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
-  body { padding: 1rem; background:#f8f9fa; }
-  header { text-align:center; margin-bottom:1rem; }
-  .qr-card { border:1px dashed #ddd; padding:0.5rem; border-radius:8px; background:#fff;}
-  #registeredTodayList { max-height:200px; overflow:auto; }
-  .flash { animation: flashAnim 0.5s ease-in-out; }
-  @keyframes flashAnim { 0%{background:yellow;} 50%{background:#fff;} 100%{background:yellow;} }
-  @media print {
-    body * { visibility: hidden; }
-    #print-area, #print-area * { visibility: visible; }
-    #print-area { position: absolute; left: 0; top: 0; width:100%; }
-    .label { page-break-inside: avoid; }
-  }
-  .scanner-canvas { width: 100%; height: auto; border-radius:8px; }
+body { padding:1rem; background:#f8f9fa; }
+header { text-align:center; margin-bottom:1rem; }
+.qr-card { border:1px dashed #ddd; padding:0.5rem; border-radius:8px; background:#fff; }
+.scanner-canvas { width:100%; height:auto; border-radius:8px; }
+#registeredList .fade-in { animation: fadeIn 0.6s ease-in; }
+@keyframes fadeIn { from {opacity:0;} to {opacity:1;} }
+.flash { animation: flashAnim 0.5s; }
+@keyframes flashAnim { 0%{background:#ffff99;} 100%{background:transparent;} }
+@media print {
+  body * { visibility:hidden; }
+  #print-area, #print-area * { visibility:visible; }
+  #print-area { position:absolute; left:0; top:0; width:100%; }
+}
 </style>
 </head>
 <body>
 <header>
-  <h1>Restaurante Escolar</h1>
-  <h3>IE Baldomero Sanín Cano</h3>
-  <p class="text-muted">Carga CSV • QR • Escáner • Asistencia • Impresión • Responsive</p>
+<h1>Restaurante Escolar</h1>
+<h3>IE Baldomero Sanín Cano</h3>
+<p class="text-muted">Carga CSV • Escáner • Asistencia • Impresión • Responsive</p>
 </header>
 
 <div class="container">
   <div class="row g-3">
-
-    <!-- Left column: Controls -->
     <div class="col-lg-4">
       <div class="card mb-3">
         <div class="card-body">
@@ -58,18 +56,12 @@
               <small id="scanStatus" class="text-success"></small>
             </div>
           </div>
-
           <hr/>
           <h5>Estudiantes registrados hoy</h5>
-          <ul id="registeredTodayList" class="list-group"></ul>
-
-          <hr/>
-          <button id="exportPdfBtn" class="btn btn-primary w-100 mt-2">Exportar PDF</button>
-          <div id="pdfFlashMsg" style="position:fixed; top:20px; right:20px; padding:10px 15px; background:green; color:white; border-radius:5px; display:none; opacity:0; z-index:9999;">PDF generado con éxito</div>
+          <div id="registeredList" class="list-group mb-2" style="max-height:200px; overflow:auto;"></div>
+          <button id="exportPDF" class="btn btn-dark w-100">Exportar PDF</button>
         </div>
       </div>
-
-      <!-- Dashboard -->
       <div class="card">
         <div class="card-body">
           <h5>Dashboard (tiempo real)</h5>
@@ -80,128 +72,92 @@
         </div>
       </div>
     </div>
-
-    <!-- Right column: Print area -->
-    <div class="col-lg-8">
-      <div id="print-area" style="display:none; background:#fff; padding:1rem;">
-        <div id="labelsContainer" class="d-flex flex-wrap gap-2"></div>
-      </div>
-    </div>
-
   </div>
 </div>
 
 <script>
-/* ===== STORAGE ===== */
-const STORAGE_STUDENTS='rs_students_v2';
-const STORAGE_ATT='rs_attendance_v2';
+const STORAGE_STUDENTS = 'rs_students_v1';
+const STORAGE_ATT = 'rs_attendance_v1';
+
 function readStudents(){ return JSON.parse(localStorage.getItem(STORAGE_STUDENTS)||'[]'); }
-function writeStudents(arr){ localStorage.setItem(STORAGE_STUDENTS,JSON.stringify(arr)); }
+function writeStudents(arr){ localStorage.setItem(STORAGE_STUDENTS, JSON.stringify(arr)); }
 function readAttendance(){ return JSON.parse(localStorage.getItem(STORAGE_ATT)||'{}'); }
-function writeAttendance(obj){ localStorage.setItem(STORAGE_ATT,JSON.stringify(obj)); }
-function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function writeAttendance(obj){ localStorage.setItem(STORAGE_ATT, JSON.stringify(obj)); }
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 function todayKey(){ return new Date().toISOString().slice(0,10); }
+function formatDateVerbose(){ 
+  const d = new Date(); 
+  return d.toLocaleDateString('es-CO',{weekday:'long', day:'numeric', month:'long'});
+}
 
-const totalStudentsEl=document.getElementById('totalStudents');
-const attTodayEl=document.getElementById('attToday');
-const attTotalEl=document.getElementById('attTotal');
-document.getElementById('todayDate').textContent=todayKey();
+const totalStudentsEl = document.getElementById('totalStudents');
+const attTodayEl = document.getElementById('attToday');
+const attTotalEl = document.getElementById('attTotal');
+document.getElementById('todayDate').textContent = formatDateVerbose();
+const registeredList = document.getElementById('registeredList');
 
-function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+renderDashboard();
 
-/* CSV Import */
 document.getElementById('importBtn').addEventListener('click', ()=>{
-  const f=document.getElementById('csvFile').files[0];
-  if(!f){ alert('Seleccione CSV'); return; }
-  Papa.parse(f,{
-    header:true, skipEmptyLines:true,
+  const f = document.getElementById('csvFile').files[0];
+  if(!f){ alert('Seleccione un CSV'); return; }
+  Papa.parse(f,{header:true, skipEmptyLines:true,
     complete(results){
-      const rows=results.data;
-      const arr=readStudents();
+      const arr = readStudents();
       let added=0;
-      for(const r of rows){
-        const name=(r.name||'').trim();
-        const grade=(r.grade||'').trim();
+      for(const r of results.data){
+        const name = (r.name||r.Nombre||r.nombre||'').trim();
+        const grade = (r.grade||r.Grade||r.grado||'').trim();
         if(!name) continue;
-        arr.push({id:uid(),name,grade,createdAt:new Date().toISOString()});
+        arr.push({id:uid(), name, grade, createdAt:new Date().toISOString()});
         added++;
       }
       writeStudents(arr);
-      alert(`Importados: ${added} estudiantes`);
+      alert(`${added} estudiantes añadidos`);
       renderDashboard();
-    },
-    error(err){ alert('Error CSV: '+err.message); }
+    }
   });
 });
 
-/* Render dashboard */
 function renderDashboard(){
-  const students=readStudents();
-  const attendance=readAttendance();
-  totalStudentsEl.textContent=students.length;
-  const today=todayKey();
-  attTodayEl.textContent=attendance[today]? Object.keys(attendance[today]).length : 0;
-  attTotalEl.textContent=Object.values(attendance).reduce((s,obj)=>s+Object.keys(obj).length,0);
-}
-renderDashboard();
+  const students = readStudents();
+  const attendance = readAttendance();
+  totalStudentsEl.textContent = students.length;
+  const today = todayKey();
+  const attToday = attendance[today]? Object.keys(attendance[today]).length:0;
+  const attTotal = Object.values(attendance).reduce((s,obj)=>s+Object.keys(obj).length,0);
+  attTodayEl.textContent = attToday;
+  attTotalEl.textContent = attTotal;
 
-/* Attendance registration + audio + flash + listado dinámico */
-function registerAttendanceQR(name,grade){
-  const students=readStudents();
-  const attendance=readAttendance();
-  const today=todayKey();
-
-  const student=students.find(s=>s.name===name && s.grade===grade);
-  if(!student){ alert('Estudiante no encontrado'); return; }
-
-  if(!attendance[today]) attendance[today]={};
-  if(attendance[today][student.id]){
-    playAudio(`El estudiante ${name} ya registrado`);
-    flashEffect(student.id);
-    return;
+  // actualizar listado de registrados hoy
+  registeredList.innerHTML='';
+  if(attendance[today]){
+    const ids = Object.keys(attendance[today]);
+    ids.forEach(id=>{
+      const s = students.find(x=>x.id===id);
+      if(s){
+        const el = document.createElement('div');
+        el.className='list-group-item fade-in';
+        el.textContent = s.name + ' - ' + (s.grade||'');
+        registeredList.appendChild(el);
+      }
+    });
   }
-  attendance[today][student.id]=new Date().toISOString();
-  writeAttendance(attendance);
-  renderDashboard();
-  addRegisteredList(student.name);
-  playAudio(`Estudiante ${name} registrado`);
-  flashEffect(student.id);
 }
 
-/* Audio */
-function playAudio(text){
-  const msg=new SpeechSynthesisUtterance(text);
-  msg.lang='es-ES';
-  window.speechSynthesis.speak(msg);
-}
-
-/* Flash efecto */
-function flashEffect(id){
-  // simple flash en lista registrada
-  const li=document.createElement('li');
-  li.textContent=''; // no visible
-  li.className='flash';
-  setTimeout(()=>li.remove(),500);
-}
-
-/* Listado dinámico */
-function addRegisteredList(name){
-  const ul=document.getElementById('registeredTodayList');
-  const li=document.createElement('li');
-  li.className='list-group-item flash';
-  li.textContent=name;
-  ul.appendChild(li);
-}
-
-/* QR Scanner */
+// ==== QR Scanner ====
 let videoStream=null;
 let scanning=false;
 const video=document.getElementById('video');
 const canvas=document.getElementById('canvas');
 const ctx=canvas.getContext('2d');
 const scanStatus=document.getElementById('scanStatus');
-let lastScanTime=0;
-const SCAN_COOLDOWN_MS=1500;
+const audioRegister = new SpeechSynthesisUtterance();
+audioRegister.lang='es-ES';
+
+const audioAlready = new SpeechSynthesisUtterance();
+audioAlready.lang='es-ES';
 
 document.getElementById('startScanner').addEventListener('click', startScanner);
 document.getElementById('stopScanner').addEventListener('click', stopScanner);
@@ -209,13 +165,15 @@ document.getElementById('stopScanner').addEventListener('click', stopScanner);
 async function startScanner(){
   if(scanning) return;
   try{
-    let stream=null;
-    try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:'environment'}}}); }
-    catch(e){ stream=await navigator.mediaDevices.getUserMedia({video:true}); }
-    video.srcObject=stream; videoStream=stream;
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    video.srcObject=stream;
+    videoStream=stream;
     document.getElementById('scanner-area').style.display='block';
-    scanning=true; scanLoop();
-  }catch(err){ alert('No se pudo acceder a la cámara: '+err.message); }
+    scanning=true;
+    scanLoop();
+  }catch(e){
+    alert('No se pudo acceder a la cámara: '+e.message);
+  }
 }
 
 function stopScanner(){
@@ -225,11 +183,13 @@ function stopScanner(){
   scanStatus.textContent='';
 }
 
+let lastScanTime=0;
+const SCAN_COOLDOWN_MS=1500;
+
 function scanLoop(){
   if(!scanning) return;
   if(video.readyState===video.HAVE_ENOUGH_DATA){
-    canvas.width=video.videoWidth;
-    canvas.height=video.videoHeight;
+    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
     const imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
     const code=jsQR(imgData.data,imgData.width,imgData.height,{inversionAttempts:"attemptBoth"});
@@ -238,55 +198,89 @@ function scanLoop(){
       if(now-lastScanTime>SCAN_COOLDOWN_MS){
         lastScanTime=now;
         let parsed=null;
-        try{ parsed=JSON.parse(code.data); }catch(e){ parsed=null; }
-        if(parsed && parsed.name && parsed.grade){
-          registerAttendanceQR(parsed.name,parsed.grade);
-          scanStatus.textContent=`Registrando: ${parsed.name}`;
-        }else{ scanStatus.textContent='QR inválido'; }
+        try{ parsed=JSON.parse(code.data);} catch(e){ parsed=null;}
+        if(parsed && parsed.name){
+          handleAttendance(parsed.name,parsed.grade);
+        } else scanStatus.textContent='QR inválido';
       }
-    }else{ scanStatus.textContent='Buscando QR...'; }
+    } else scanStatus.textContent='Buscando QR...';
   }
   requestAnimationFrame(scanLoop);
 }
 
-/* Export PDF */
-document.getElementById('exportPdfBtn').addEventListener('click', ()=>{
-  const { jsPDF }=window.jspdf;
-  const doc=new jsPDF();
-  const today=new Date();
-  const options={weekday:'long', day:'numeric', month:'long'};
-  const todayStr=today.toLocaleDateString('es-ES',options);
-  doc.text(`Estudiantes registrados - ${todayStr}`,10,10);
-  const students=Array.from(document.querySelectorAll('#registeredTodayList .list-group-item'));
-  students.forEach((li,idx)=>{
-    doc.text(`${idx+1}. ${li.textContent}`,10,20+idx*10);
-  });
-  doc.save(`Estudiantes_${todayStr}.pdf`);
-  // Flash y mensaje
-  const btn=document.getElementById('exportPdfBtn');
-  btn.style.backgroundColor='#28a745';
-  setTimeout(()=>{ btn.style.backgroundColor=''; },300);
-  const msg=document.getElementById('pdfFlashMsg');
-  msg.style.display='block';
-  msg.style.opacity=1;
-  setTimeout(()=>{
-    msg.style.opacity=0;
-    setTimeout(()=>{ msg.style.display='none'; },500);
-  },1000);
-});
-
-/* Demo students (optional) */
-if(readStudents().length===0){
-  writeStudents([
-    {id:uid(),name:'Carlos Pérez',grade:'10-1',createdAt:new Date().toISOString()},
-    {id:uid(),name:'María Gómez',grade:'9-2',createdAt:new Date().toISOString()}
-  ]);
+function handleAttendance(name, grade){
+  const students=readStudents();
+  const s = students.find(x=>x.name===name && x.grade===grade);
+  if(!s){ scanStatus.textContent='Estudiante no encontrado'; return; }
+  const attendance=readAttendance();
+  const key=todayKey();
+  if(!attendance[key]) attendance[key]={};
+  if(attendance[key][s.id]){
+    scanStatus.textContent='Ya registrado';
+    audioAlready.text=`Estudiante ${s.name} ya registrado`;
+    speechSynthesis.speak(audioAlready);
+    return;
+  }
+  attendance[key][s.id]=new Date().toISOString();
+  writeAttendance(attendance);
+  scanStatus.textContent=`Registrado: ${s.name}`;
+  audioRegister.text=`Estudiante ${s.name} registrado`;
+  speechSynthesis.speak(audioRegister);
   renderDashboard();
+  // efecto flash
+  const el=document.createElement('div');
+  el.className='flash position-absolute top-0 start-0 w-100 h-100';
+  document.body.appendChild(el);
+  setTimeout(()=>{document.body.removeChild(el);},500);
 }
 
-/* Stop camera if page hidden */
-document.addEventListener('visibilitychange',()=>{ if(document.hidden) stopScanner(); });
+// ==== Exportar PDF ====
+document.getElementById('exportPDF').addEventListener('click', ()=>{
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const today=formatDateVerbose();
+  doc.setFontSize(14);
+  doc.text(`Estudiantes registrados - ${today}`,10,15);
+  const students=readStudents();
+  const attendance=readAttendance();
+  const key=todayKey();
+  if(attendance[key]){
+    let y=25, i=1;
+    Object.keys(attendance[key]).forEach(id=>{
+      const s = students.find(x=>x.id===id);
+      if(s){
+        doc.text(`${i}. ${s.name} - ${s.grade}`,10,y);
+        y+=7; i++;
+      }
+    });
+  }
+  doc.save(`Estudiantes_${today}.pdf`);
+});
+
+// ==== Clear local storage ====
+document.getElementById('clearData').addEventListener('click',()=>{
+  if(confirm('Borrar estudiantes y asistencias?')){
+    localStorage.removeItem(STORAGE_STUDENTS);
+    localStorage.removeItem(STORAGE_ATT);
+    registeredList.innerHTML='';
+    renderDashboard();
+  }
+});
+
+// ==== Demo students si no hay ninguno ====
+if(readStudents().length===0){
+  const sample=[
+    {id:uid(), name:'Carlos Pérez', grade:'10-1', createdAt:new Date().toISOString()},
+    {id:uid(), name:'María Gómez', grade:'9-2', createdAt:new Date().toISOString()},
+    {id:uid(), name:'Juan Rodríguez', grade:'11-3', createdAt:new Date().toISOString()},
+    {id:uid(), name:'Ana Morales', grade:'10-2', createdAt:new Date().toISOString()}
+  ];
+  writeStudents(sample);
+  renderDashboard();
+}
 </script>
 </body>
 </html>
+
+
 
