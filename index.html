@@ -32,7 +32,8 @@ header { text-align:center; margin-bottom:1rem; }
 .label { border:1px dashed #ccc; padding:5px; margin:5px; display:inline-flex; flex-direction:column; align-items:center; width:30%; }
 .label .label-name { margin-top:5px; font-size:12px; text-align:center; }
 
-/* PDF simple table */
+/* Botón Exportar PDF */
+#exportPDF { background-color:black; color:white; font-weight:bold; }
 </style>
 </head>
 <body>
@@ -61,7 +62,7 @@ header { text-align:center; margin-bottom:1rem; }
             <canvas id="canvas" style="display:none;"></canvas>
             <small id="scanStatus" class="text-success"></small>
             <ul id="todayStudents" class="list-group list-group-flush mt-2"></ul>
-            <button id="exportPDF" class="btn btn-outline-secondary w-100 mt-2">Exportar PDF</button>
+            <button id="exportPDF" class="btn w-100 mt-2">Exportar PDF</button>
           </div>
           <hr/>
           <button id="printAll" class="btn btn-dark w-100">Imprimir todos los QRs</button>
@@ -243,7 +244,7 @@ document.getElementById('printAll').addEventListener('click',()=>{
   setTimeout(()=>{ window.print(); container.style.display='none'; },500);
 });
 
-// Export PDF sencillo
+// Export PDF sencillo con tabla y fecha de registro
 document.getElementById('exportPDF').addEventListener('click',()=>{
   const att=readAttendance();
   const today=todayKey();
@@ -253,14 +254,26 @@ document.getElementById('exportPDF').addEventListener('click',()=>{
   const doc = new jsPDF();
   doc.setFontSize(14);
   doc.text(`Estudiantes registrados - ${today}`, 14, 20);
-  const startY=30; let y=startY; let index=1; doc.setFontSize(12);
-  doc.text('N°',14,y); doc.text('Nombre',24,y); doc.text('Grado',140,y); y+=7;
+  
+  // Generar tabla
+  const tableCol = ["N°", "Nombre", "Grado", "Fecha de registro"];
+  const tableRows = [];
+  let index=1;
   Object.keys(att[today]).forEach(id=>{
     const s=students.find(st=>st.id===id);
     if(s){
-      if(y>280){ doc.addPage(); y=20; doc.text('N°',14,y); doc.text('Nombre',24,y); doc.text('Grado',140,y); y+=7; }
-      doc.text(`${index}`,14,y); doc.text(`${s.name}`,24,y); doc.text(`${s.grade}`,140,y); y+=7; index++;
+      const dateReg = new Date(att[today][id]).toLocaleDateString('es-ES',{day:'2-digit', month:'long', year:'numeric'});
+      tableRows.push([index++, s.name, s.grade, dateReg]);
     }
+  });
+  doc.autoTable({
+    head: [tableCol],
+    body: tableRows,
+    startY:30,
+    styles: { cellPadding:2, fontSize:12, halign:'left', valign:'middle', lineColor:[0,0,0], lineWidth:0.5 },
+    headStyles: { fillColor:[200,200,200], textColor:[0,0,0], fontStyle:'bold' },
+    alternateRowStyles: { fillColor:[240,240,240] },
+    theme:'grid'
   });
   doc.save(`Estudiantes_${today}.pdf`);
 });
@@ -286,5 +299,6 @@ if(readStudents().length===0){
   writeStudents(sample);
 }
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
 </body>
 </html>
