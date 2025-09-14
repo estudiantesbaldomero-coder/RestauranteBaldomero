@@ -17,46 +17,22 @@
 <style>
 body { padding: 1rem; background:#f8f9fa; }
 header { text-align:center; margin-bottom:1rem; }
-.qr-card { border:1px dashed #ddd; padding:0.5rem; border-radius:8px; background:#fff; }
-#video { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius:8px; }
+#video { width: 100%; aspect-ratio:1/1; object-fit: cover; border-radius:8px; }
+.flash { animation: flashAnim 0.4s; }
+@keyframes flashAnim { 0% { background-color: #ffff99; } 50% { background-color: #f8f9fa; } 100% { background-color: #f8f9fa; } }
 
-/* Print styles */
+/* Impresión QR tamaño carta */
 @media print {
   body * { visibility: hidden; }
   #print-area, #print-area * { visibility: visible; }
-  #print-area { position: absolute; left:0; top:0; width:100%; }
-  .label { page-break-inside: avoid; }
+  #print-area { position: absolute; left: 0; top: 0; width: 100%; display:flex; flex-wrap:wrap; padding:10px; box-sizing:border-box; }
+  .label { width:32%; margin:1%; text-align:center; page-break-inside: avoid; display:flex; flex-direction:column; align-items:center; }
+  .label-name { margin-top:5px; font-size:12px; text-align:center; }
 }
+.label { border:1px dashed #ccc; padding:5px; margin:5px; display:inline-flex; flex-direction:column; align-items:center; width:30%; }
+.label .label-name { margin-top:5px; font-size:12px; text-align:center; }
 
-/* QR sheet layout: 3x4 por hoja tamaño carta */
-.label {
-  width: 180px;
-  height: 180px;
-  padding:6px;
-  border:1px solid #ddd;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  margin:6px;
-  background:#fff;
-  page-break-inside: avoid;
-}
-#labelsContainer {
-  display:flex;
-  flex-wrap:wrap;
-  justify-content:flex-start;
-}
-
-/* Flash effect */
-.flash {
-  animation: flashAnim 0.4s;
-}
-@keyframes flashAnim {
-  0% { background-color: #ffff99; }
-  50% { background-color: #f8f9fa; }
-  100% { background-color: #f8f9fa; }
-}
+/* PDF simple table */
 </style>
 </head>
 <body>
@@ -64,44 +40,34 @@ header { text-align:center; margin-bottom:1rem; }
 <header>
   <h1>Restaurante Escolar</h1>
   <h3>IE Baldomero Sanín Cano</h3>
-  <p class="text-muted">Carga CSV • Códigos QR • Escáner • Asistencia • Impresión • PDF profesional • Responsive</p>
 </header>
 
 <div class="container">
   <div class="row g-3">
-
     <div class="col-lg-4">
       <div class="card mb-3">
         <div class="card-body">
           <h5>Importar estudiantes (CSV)</h5>
           <input id="csvFile" type="file" accept=".csv,text/csv" class="form-control mb-2" />
-          <small class="text-muted">CSV: encabezados <code>name,grade</code> (name obligatorio)</small>
           <button id="importBtn" class="btn btn-primary w-100 mt-2">Cargar CSV</button>
           <hr/>
           <h5>Escáner QR</h5>
           <div id="scanner-controls" class="mb-2">
             <button id="startScanner" class="btn btn-outline-primary w-100 mb-1">Iniciar escáner</button>
             <button id="stopScanner" class="btn btn-outline-secondary w-100 mb-1">Detener escáner</button>
-            <small class="text-muted">QR debe contener JSON: <code>{"name":"Juan Pérez","grade":"10-1"}</code></small>
           </div>
           <div id="scanner-area" style="display:none;">
             <video id="video" autoplay playsinline></video>
             <canvas id="canvas" style="display:none;"></canvas>
-            <div class="mt-2">
-              <small id="scanStatus" class="text-success"></small>
-            </div>
-            <div id="registeredList" class="mt-2">
-              <h6>Estudiantes registrados hoy:</h6>
-              <ul id="todayStudents" class="list-group list-group-flush"></ul>
-            </div>
+            <small id="scanStatus" class="text-success"></small>
+            <ul id="todayStudents" class="list-group list-group-flush mt-2"></ul>
+            <button id="exportPDF" class="btn btn-outline-secondary w-100 mt-2">Exportar PDF</button>
           </div>
           <hr/>
           <button id="printAll" class="btn btn-dark w-100">Imprimir todos los QRs</button>
-          <button id="exportPDF" class="btn btn-outline-secondary w-100 mt-1">Exportar PDF</button>
         </div>
       </div>
 
-      <!-- Dashboard -->
       <div class="card">
         <div class="card-body">
           <h5>Dashboard (tiempo real)</h5>
@@ -114,10 +80,7 @@ header { text-align:center; margin-bottom:1rem; }
     </div>
 
     <div class="col-lg-8">
-      <!-- Print area hidden -->
-      <div id="print-area" style="display:none; background:#fff; padding:1rem;">
-        <div id="labelsContainer"></div>
-      </div>
+      <div id="print-area" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -126,12 +89,10 @@ header { text-align:center; margin-bottom:1rem; }
 // STORAGE
 const STORAGE_STUDENTS = 'rs_students_v1';
 const STORAGE_ATT = 'rs_attendance_v1';
-
 function readStudents(){ return JSON.parse(localStorage.getItem(STORAGE_STUDENTS) || '[]'); }
 function writeStudents(arr){ localStorage.setItem(STORAGE_STUDENTS, JSON.stringify(arr)); }
 function readAttendance(){ return JSON.parse(localStorage.getItem(STORAGE_ATT) || '{}'); }
 function writeAttendance(obj){ localStorage.setItem(STORAGE_ATT, JSON.stringify(obj)); }
-
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function todayKey(){ return new Date().toISOString().slice(0,10); }
 
@@ -140,8 +101,8 @@ const attTodayEl = document.getElementById('attToday');
 const attTotalEl = document.getElementById('attTotal');
 document.getElementById('todayDate').textContent = todayKey();
 
-// Import CSV
-document.getElementById('importBtn').addEventListener('click', async ()=>{
+// CSV import
+document.getElementById('importBtn').addEventListener('click', ()=>{
   const f = document.getElementById('csvFile').files[0];
   if(!f){ alert('Seleccione CSV'); return; }
   Papa.parse(f,{header:true,skipEmptyLines:true,
@@ -157,9 +118,8 @@ document.getElementById('importBtn').addEventListener('click', async ()=>{
       }
       writeStudents(arr);
       alert(`Importación finalizada: ${added} estudiantes añadidos.`);
-    },
-    error(err){ alert('Error parseando CSV: '+err.message); }
-  });
+      renderDashboard();
+    }});
 });
 
 // Attendance
@@ -178,7 +138,7 @@ function registerAttendanceQR(name, grade){
   return student.name;
 }
 
-// Render dashboard
+// Dashboard
 function renderDashboard(){
   const students = readStudents();
   const att = readAttendance();
@@ -189,7 +149,7 @@ function renderDashboard(){
 }
 renderDashboard();
 
-// Render registered today
+// List today
 function renderTodayList(){
   const att = readAttendance();
   const today = todayKey();
@@ -197,13 +157,15 @@ function renderTodayList(){
   ul.innerHTML='';
   if(att[today]){
     const students = readStudents();
-    Object.keys(att[today]).forEach((id,index)=>{
+    let index=1;
+    Object.keys(att[today]).forEach(id=>{
       const s = students.find(st=>st.id===id);
       if(s){
         const li = document.createElement('li');
         li.className='list-group-item flash';
-        li.textContent = `${index+1}. ${s.name} - ${s.grade}`;
+        li.textContent = `${index}. ${s.name} - ${s.grade}`;
         ul.appendChild(li);
+        index++;
         setTimeout(()=>li.classList.remove('flash'),400);
       }
     });
@@ -211,14 +173,12 @@ function renderTodayList(){
 }
 renderTodayList();
 
-// QR Scanner
-let videoStream=null;
-let scanning=false;
+// Scanner
+let videoStream=null, scanning=false;
 const video=document.getElementById('video');
 const canvas=document.getElementById('canvas');
 const ctx=canvas.getContext('2d');
 const scanStatus=document.getElementById('scanStatus');
-
 document.getElementById('startScanner').addEventListener('click',startScanner);
 document.getElementById('stopScanner').addEventListener('click',stopScanner);
 
@@ -228,31 +188,19 @@ async function startScanner(){
     let stream=null;
     try{ stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:"environment"}}}); }
     catch(e){ stream = await navigator.mediaDevices.getUserMedia({video:true}); }
-    video.srcObject=stream;
-    videoStream=stream;
-    scanning=true;
-    document.getElementById('scanner-area').style.display='block';
-    scanLoop();
+    video.srcObject=stream; videoStream=stream; scanning=true;
+    document.getElementById('scanner-area').style.display='block'; scanLoop();
   }catch(err){ alert('No se pudo acceder a la cámara: '+err.message); }
 }
-function stopScanner(){
-  scanning=false;
-  if(videoStream){ videoStream.getTracks().forEach(t=>t.stop()); videoStream=null; }
-  document.getElementById('scanner-area').style.display='none';
-  scanStatus.textContent='';
-}
+function stopScanner(){ scanning=false; if(videoStream){ videoStream.getTracks().forEach(t=>t.stop()); videoStream=null; } document.getElementById('scanner-area').style.display='none'; scanStatus.textContent=''; }
 
-// Mantener el video cuadrado
-video.addEventListener('loadedmetadata',()=>{
-  video.style.height = video.offsetWidth + 'px';
-});
+video.addEventListener('loadedmetadata',()=>{ video.style.height = video.offsetWidth + 'px'; });
 
 let lastScan=0;
 function scanLoop(){
   if(!scanning) return;
   if(video.readyState===video.HAVE_ENOUGH_DATA){
-    canvas.width=video.videoWidth;
-    canvas.height=video.videoHeight;
+    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
     const imgData=ctx.getImageData(0,0,canvas.width,canvas.height);
     const code=jsQR(imgData.data,imgData.width,imgData.height,{inversionAttempts:"attemptBoth"});
@@ -260,8 +208,7 @@ function scanLoop(){
       const now=Date.now();
       if(now-lastScan>1500){
         lastScan=now;
-        let parsed=null;
-        try{ parsed=JSON.parse(code.data); }catch(e){ parsed=null; }
+        let parsed=null; try{ parsed=JSON.parse(code.data); }catch(e){ parsed=null; }
         if(parsed && parsed.name && parsed.grade){
           const res=registerAttendanceQR(parsed.name, parsed.grade);
           if(res==='notfound'){ scanStatus.textContent='Estudiante no encontrado'; speak('Estudiante no encontrado'); }
@@ -273,19 +220,16 @@ function scanLoop(){
   }
   requestAnimationFrame(scanLoop);
 }
-
-// Speech
 function speak(text){ const u = new SpeechSynthesisUtterance(text); window.speechSynthesis.speak(u); }
 
-// Print all QRs
+// Print all QRs profesional
 function buildPrintLabels(){
-  const container=document.getElementById('labelsContainer');
-  container.innerHTML='';
+  const container=document.getElementById('print-area'); container.innerHTML=''; container.style.display='block';
   const students=readStudents();
   for(const s of students){
     const label=document.createElement('div'); label.className='label';
     const holder=document.createElement('div'); label.appendChild(holder);
-    const nameEl=document.createElement('div'); nameEl.style='font-size:12px; margin-top:6px; text-align:center;';
+    const nameEl=document.createElement('div'); nameEl.className='label-name';
     nameEl.textContent=`${s.name} - ${s.grade}`;
     label.appendChild(nameEl);
     container.appendChild(label);
@@ -296,11 +240,10 @@ function buildPrintLabels(){
 
 document.getElementById('printAll').addEventListener('click',()=>{
   buildPrintLabels();
-  document.getElementById('print-area').style.display='block';
-  setTimeout(()=>{ window.print(); document.getElementById('print-area').style.display='none'; },500);
+  setTimeout(()=>{ window.print(); container.style.display='none'; },500);
 });
 
-// Export PDF profesional
+// Export PDF sencillo
 document.getElementById('exportPDF').addEventListener('click',()=>{
   const att=readAttendance();
   const today=todayKey();
@@ -308,49 +251,19 @@ document.getElementById('exportPDF').addEventListener('click',()=>{
   const students=readStudents();
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
-  doc.setFontSize(16);
-  doc.setTextColor(40,40,40);
-  doc.setDrawColor(0);
-  doc.setLineWidth(0.5);
-
-  // Encabezado profesional
-  doc.setFillColor(200, 220, 255);
-  doc.rect(10,10,190,12,'F');
-  doc.text(`Estudiantes registrados - ${formatDateToday()}`,105,19,{align:'center'});
-
-  // Tabla
-  const startY = 28;
-  const rowHeight = 10;
-  const colX = [14, 24, 120]; // Número, Nombre, Grado
-  doc.setFontSize(12);
-  doc.setTextColor(0);
-  doc.text('N°', colX[0], startY);
-  doc.text('Nombre', colX[1], startY);
-  doc.text('Grado', colX[2], startY);
-  let y = startY + rowHeight;
-  let index =1;
-
+  doc.setFontSize(14);
+  doc.text(`Estudiantes registrados - ${today}`, 14, 20);
+  const startY=30; let y=startY; let index=1; doc.setFontSize(12);
+  doc.text('N°',14,y); doc.text('Nombre',24,y); doc.text('Grado',140,y); y+=7;
   Object.keys(att[today]).forEach(id=>{
     const s=students.find(st=>st.id===id);
     if(s){
-      if(y>280){ doc.addPage(); y=28; doc.text('N°', colX[0], y); doc.text('Nombre', colX[1], y); doc.text('Grado', colX[2], y); y+=rowHeight;}
-      doc.rect(10, y-8, 190, rowHeight); // fila con borde
-      doc.text(`${index}`, colX[0], y);
-      doc.text(`${s.name}`, colX[1], y);
-      doc.text(`${s.grade}`, colX[2], y);
-      y+=rowHeight;
-      index++;
+      if(y>280){ doc.addPage(); y=20; doc.text('N°',14,y); doc.text('Nombre',24,y); doc.text('Grado',140,y); y+=7; }
+      doc.text(`${index}`,14,y); doc.text(`${s.name}`,24,y); doc.text(`${s.grade}`,140,y); y+=7; index++;
     }
   });
-
   doc.save(`Estudiantes_${today}.pdf`);
 });
-
-function formatDateToday(){
-  const d=new Date();
-  const opts={weekday:'long',day:'numeric',month:'long'};
-  return d.toLocaleDateString('es-ES',opts);
-}
 
 // Clear data
 document.getElementById('clearData').addEventListener('click',()=>{
